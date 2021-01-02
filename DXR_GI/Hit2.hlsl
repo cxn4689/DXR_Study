@@ -95,7 +95,7 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space303);
 		float3 indirect_lit = float3(0, 0, 0);
 		float3 cos_indrct_n = float3(0, 0, 0);
 
-		if (cur_depth < 5 && USE_INDRCT)
+		if (cur_depth < 3 && USE_INDRCT)
 		{
 			//create base
 			/*

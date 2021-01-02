@@ -16,7 +16,7 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space301);
 
 [shader("closesthit")] void ClosestHit(inout HitInfo payload,
                                        Attributes attrib) {
-#if 0
+#ifdef USE_GLASS
   float3 barycentrics =
       float3(1.f - attrib.bary.x - attrib.bary.y, attrib.bary.x, attrib.bary.y);
 
@@ -60,7 +60,7 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space301);
 		  //from smallpt
 		  float3 nl = (in_or_out < 0) ? norm : (norm * -1);
 		  uint into = (dot(norm, nl) > 0) ? 1 : 0;
-		  float nt = 1.5, nc = 1.0;
+		  float nt = 1.1, nc = 1.0;
 		  float nnt = into ? (nc / nt) : (nt / nc);
 		  float ddn = dot(ray_dir, nl);
 		  float cos2t = 1.0 - nnt * nnt * (1 - ddn * ddn);
@@ -74,10 +74,30 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space301);
 		  R = normalize(R);
 		  //
 		  float3 reflect_color = float3(0, 0, 0);
+		  //
+		  /*
+		  if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0)    // Total internal reflection
+			Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
+			double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
+			double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
+			return obj.e + f.mult(depth>2 ? (erand48(Xi)<P ?   // Russian roulette
+			radiance(reflRay,depth,Xi)*RP:radiance(Ray(x,tdir),depth,Xi)*TP) :
+			radiance(reflRay,depth,Xi)*Re+radiance(Ray(x,tdir),depth,Xi)*Tr);
+		  */
+		  float3 tdir = RFR;// ray_dir * nnt - norm * ((into ? 1.0 : -1.0)*(ddn*nnt + sqrt(cos2t)));
+		  tdir = normalize(tdir);
+		  float a = nt - nc, b = nt + nc, R0 = a * a / (b*b), c = 1 - (into ? -ddn :dot(tdir, norm));
+		  float Re = R0 + (1 - R0)*c*c*c*c*c, Tr = 1 - Re, P = .25 + .5*Re, RP = Re / P, TP = Tr / (1 - P);
+
+		  LCGRand randx;
+		  randx.state = asuint(payload.random.x);
+		  float r1 = lcg_randomf(randx);
+		  payload.random.x = asfloat(randx.state);
+		  uint use_reflect = (cur_depth <= 2) || (r1 < P);
 
 		  RayDesc ray;
-
-		  if (into)
+#if 1
+		  if (use_reflect)
 		  {
 			  ray.Origin = hitLocation;// +offset_fix;
 			  ray.Direction = R;
@@ -102,6 +122,7 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space301);
 
 			  payload.random.x = payloadx.random.x;
 		  }
+#endif
 		  //
 		  //center of light is: x=-1.35, y=0.7f, z=1.35
 		  //float3 light_pos = float3(-1.35, 0.7, 1.35);
@@ -117,7 +138,7 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space301);
 		  //cxn4689
 		  //float3 offset_fix = (into && (cos2t >= 0.0)) ? (RFR * 0.001) : float3(0, 0, 0);
 		  ray.Origin = hitLocation;// +offset_fix;
-		  ray.Direction = (cos2t < 0.0) ? R : RFR;
+		  ray.Direction = RFR;// (cos2t < 0.0) ? R : RFR;
 		  //assume 20% reflection
 		  //uint seed = (uint)payloadx.random.x;
 		  //if (seed % 5 == 4)
@@ -125,26 +146,47 @@ StructuredBuffer<STriAttrib> BTriAttrib : register(t2, space301);
 			//  ray.Direction = R;
 		  //}
 
-		  ray.TMin = 0.001;
+		  ray.TMin = 0.01;
 		  ray.TMax = 100000;
 		  //
-		  TraceRay(
-			  SceneBVH,
-			  RAY_FLAG_NONE,
-			  0xFF,
-			  0,
-			  0,
-			  0,
-			  ray,
-			  payloadx);
+		  if (cos2t >= 0)
+		  {
+			  TraceRay(
+				  SceneBVH,
+				  RAY_FLAG_NONE,
+				  0xFF,
+				  0,
+				  0,
+				  0,
+				  ray,
+				  payloadx);
+		  }
 		  payload.random.x = payloadx.random.x;
 		  if (into && 0)
 		  {
-			  payload.colorAndDistance.rgb = reflect_color * 0.2 + payloadx.colorAndDistance.rgb * 0.8;
+			  payload.colorAndDistance.rgb = reflect_color * 0.3 + payloadx.colorAndDistance.rgb * 0.7;
 		  }
 		  else
 		  {
-			  payload.colorAndDistance = payloadx.colorAndDistance;
+			  //payload.colorAndDistance = payloadx.colorAndDistance;
+			  /*return obj.e + f.mult(depth > 2 ? (erand48(Xi) < P ?   // Russian roulette
+				  radiance(reflRay, depth, Xi)*RP : radiance(Ray(x, tdir), depth, Xi)*TP) :
+				  radiance(reflRay, depth, Xi)*Re + radiance(Ray(x, tdir), depth, Xi)*Tr);*/
+			  if (cur_depth > 2)
+			  {
+				  if (r1 < P)
+				  {
+					  payload.colorAndDistance.rgb = reflect_color * RP;
+				  }
+				  else
+				  {
+					  payload.colorAndDistance.rgb = payloadx.colorAndDistance.rgb * TP;
+				  }
+			  }
+			  else
+			  {
+				  payload.colorAndDistance.rgb = reflect_color * Re + payloadx.colorAndDistance.rgb * Tr;
+			  }
 		  }
 		  //payload.colorAndDistance = (into == 0) ? float4(0.0, 1.0 , 0.0, 1.0) : float4(1.0,0.0,0.0,1.0);// payloadx.colorAndDistance;
 		  payload.hit_info.x = (float)inst_index_TLAS;
@@ -252,7 +294,7 @@ if (payload.hit_info.y == 0.0f)//primary ray
 	//tracing secondary ray
 	float3 indirect_lit = float3(0, 0, 0);
 	float3 cos_indrct_n = float3(0, 0, 0);
-	if (cur_depth < 5 && USE_INDRCT)
+	if (cur_depth < 3 && USE_INDRCT)
 	{
 		//create base
 		/*

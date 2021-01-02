@@ -37,12 +37,15 @@ float lcg_randomf(inout LCGRand rng)
 	return ldexp((float)lcg_random(rng), -32) * 1.0f;
 }
 
-#define ACCUME_STEP 8.0
-#define SAMPLE_NUM 8
+#define ACCUME_STEP 1024.0
+#define SAMPLE_NUM 4096
 
 #define TMP_X 1
 
 #define USE_INDRCT 1
+
+#define USE_GLASS 1
+#define USE_MIRROR 1
 
 //#define DEBUG_RANDOM_NUM 1
 

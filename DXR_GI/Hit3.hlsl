@@ -44,7 +44,11 @@ RaytracingAccelerationStructure SceneBVH : register(t1, space305);
 
 	if (payload.hit_info.y == 0.0f)//primary ray
 	{
-		if (1 && (primId == 0 || primId == 1))
+#ifdef USE_MIRROR
+		if (1 && (primId == 0 || primId == 1) && cur_depth < 5/* && USE_INDRCT*/)
+#else
+		if(0)
+#endif
 		{
 			float3 I = WorldRayDirection();
 			I = normalize(I);
